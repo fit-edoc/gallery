@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import { useFetchPhoto } from "./hooks/useFetchPhoto";
+import { useDebounce } from "./hooks/useDebounce";
 import { PhotoCard } from "./components/PhotoCard";
-import { Heart } from "./icons/Hear";
-import { useMemo, useState, useReducer, useEffect } from "react";
+import { Heart } from "./icons/Heart";
+import { useMemo, useState, useReducer, useEffect, useCallback } from "react";
 
 // Types for Favorites State & Reducer
 interface FavoriteState {
@@ -17,23 +18,19 @@ type FavoriteAction =
 
 const FAVORITES_STORAGE_KEY = "celebrate_favorites";
 
+// Pure reducer with no side effects
 const favoriteReducer = (state: FavoriteState, action: FavoriteAction): FavoriteState => {
   switch (action.type) {
     case "INIT_FAVORITES":
       return { ...state, favorites: action.payload };
     case "TOGGLE_FAVORITE": {
       const isFav = state.favorites.includes(action.payload);
-      const updatedFavorites = isFav
-        ? state.favorites.filter((id) => id !== action.payload)
-        : [...state.favorites, action.payload];
-
-      try {
-        localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updatedFavorites));
-      } catch (err) {
-        console.error("Failed to save favorites to localStorage:", err);
-      }
-
-      return { ...state, favorites: updatedFavorites };
+      return {
+        ...state,
+        favorites: isFav
+          ? state.favorites.filter((id) => id !== action.payload)
+          : [...state.favorites, action.payload],
+      };
     }
     default:
       return state;
@@ -43,10 +40,12 @@ const favoriteReducer = (state: FavoriteState, action: FavoriteAction): Favorite
 export default function Home() {
   const { photos, loading, error } = useFetchPhoto("https://picsum.photos/v2/list?limit=30");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   // useReducer for Favorites
   const [favoriteState, dispatch] = useReducer(favoriteReducer, { favorites: [] });
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Hydrate favorites from localStorage on mount (prevents SSR hydration mismatch)
   useEffect(() => {
@@ -60,10 +59,30 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Failed to load favorites from localStorage:", err);
+    } finally {
+      setIsHydrated(true);
     }
   }, []);
 
-  // Filter photos by search query and favorite status
+  // Sync favorites state changes to localStorage (side-effect moved out of reducer)
+  useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      localStorage.setItem(
+        FAVORITES_STORAGE_KEY,
+        JSON.stringify(favoriteState.favorites)
+      );
+    } catch (err) {
+      console.error("Failed to save favorites to localStorage:", err);
+    }
+  }, [favoriteState.favorites, isHydrated]);
+
+  // Stable callback for toggling favorites to maintain PhotoCard memoization
+  const handleToggleFavorite = useCallback((id: string) => {
+    dispatch({ type: "TOGGLE_FAVORITE", payload: id });
+  }, []);
+
+  // Filter photos by debounced search query and favorite status
   const filteredPhotos = useMemo(() => {
     let result = photos;
 
@@ -71,13 +90,13 @@ export default function Home() {
       result = result.filter((p) => favoriteState.favorites.includes(p.id));
     }
 
-    if (search.trim()) {
-      const query = search.toLowerCase().trim();
+    if (debouncedSearch.trim()) {
+      const query = debouncedSearch.toLowerCase().trim();
       result = result.filter((p) => p.author.toLowerCase().includes(query));
     }
 
     return result;
-  }, [photos, search, showFavoritesOnly, favoriteState.favorites]);
+  }, [photos, debouncedSearch, showFavoritesOnly, favoriteState.favorites]);
 
   return (
     <div className="min-h-screen w-full bg-neutral-100 flex flex-col">
@@ -143,7 +162,7 @@ export default function Home() {
         )}
 
         {/* Grid Section */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {loading
             ? Array.from({ length: 8 }).map((_, idx) => (
                 <PhotoCard
@@ -159,9 +178,7 @@ export default function Home() {
                   key={photo.id}
                   {...photo}
                   isFavorite={favoriteState.favorites.includes(photo.id)}
-                  onToggleFavorite={() =>
-                    dispatch({ type: "TOGGLE_FAVORITE", payload: photo.id })
-                  }
+                  onToggleFavorite={handleToggleFavorite}
                 />
               ))}
         </div>
@@ -178,7 +195,9 @@ export default function Home() {
             <p className="text-sm text-gray-500 max-w-sm">
               {showFavoritesOnly
                 ? "Click the heart button on any photo card to save it to your favorites."
-                : `No photographers found matching "${search}". Try another search term.`}
+                : search.trim()
+                ? `No photographers found matching "${search.trim()}". Try another search term.`
+                : "No photos are available at this moment. Please check back later."}
             </p>
           </div>
         )}
@@ -186,4 +205,3 @@ export default function Home() {
     </div>
   );
 }
-

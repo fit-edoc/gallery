@@ -24,8 +24,14 @@ export const useFetchPhoto = (url: string) => {
         setError(null);
         const response = await axios.get<Photo[]>(url);
         setPhotos(response.data);
-      } catch (err: any) {
-        setError(err.message || "Something went wrong");
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          setError(err.message);
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("Something went wrong");
+        }
       } finally {
         setLoading(false);
       }

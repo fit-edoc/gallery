@@ -1,7 +1,6 @@
-
-
 import Image from "next/image";
-import { Heart } from "../icons/Hear";
+import { memo, useCallback } from "react";
+import { Heart } from "../icons/Heart";
 
 export interface PhotoCardProps {
   id: string;
@@ -11,17 +10,21 @@ export interface PhotoCardProps {
   download_url: string;
   loading?: boolean;
   isFavorite?: boolean;
-  onToggleFavorite?: () => void;
+  onToggleFavorite?: (id: string) => void;
 }
 
-export const PhotoCard = ({
+export const PhotoCard = memo(function PhotoCard({
   id,
   author,
   download_url,
   loading = false,
   isFavorite = false,
   onToggleFavorite,
-}: PhotoCardProps) => {
+}: PhotoCardProps) {
+  const handleToggle = useCallback(() => {
+    onToggleFavorite?.(id);
+  }, [onToggleFavorite, id]);
+
   if (loading) {
     return (
       <div className="w-full h-80 bg-white rounded-2xl overflow-hidden shadow-sm flex flex-col animate-pulse">
@@ -54,7 +57,7 @@ export const PhotoCard = ({
         </div>
         <button
           type="button"
-          onClick={onToggleFavorite}
+          onClick={handleToggle}
           aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
           className={`h-10 w-10 flex-shrink-0 flex justify-center items-center rounded-full transition-colors cursor-pointer ${
             isFavorite
@@ -67,4 +70,8 @@ export const PhotoCard = ({
       </div>
     </div>
   );
-};
+});
+
+PhotoCard.displayName = "PhotoCard";
+
+export default PhotoCard;
